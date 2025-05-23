@@ -1,0 +1,34 @@
+stage_config:
+  stages:
+    stage1: true
+    stage2: true
+    stage3: false
+    stage4: false
+    eval: false
+
+base_model:
+  model_name: "Qwen/Qwen3-1.7B"
+  #model_name: "nvidia/AceMath-1.5B-Instruct"
+  #model_name: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+  model_type: "decoder-only"
+
+dataset:
+  dataset_name: "accfiy"
+  split: "train"
+  dataset_hub_path: "ssuresh/accfiy"
+  dataset_local_path: "./dataset/accfiy"
+  max_length: 1024
+  max_length_eval: 1024
+  batch_size: 8
+  batch_size_eval: 8
+  test_run: false
+
+dataset2:
+  dataset_name: "accfiy_babeltower_synthetic"
+  split: "train"
+  dataset_hub_path: "ssuresh/accfiy_babeltower_synthetic"
+  dataset_local_path: "./dataset/accfiy"
+  max_length: 1024
+  max_length_eval: 1024
+  batch_size: 8
+  batch_size_eval: 8
