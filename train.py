@@ -49,6 +49,10 @@ if stage1:
     print(f"Dataset train :{hf_dataset_stage1['input_ids'].__class__}")
     print(f"Dataset attention :{hf_dataset_stage1['attention_mask'].__class__}")
     hf_dataset_stage1 = hf_dataset_stage1.train_test_split(test_size=0.1, shuffle=True, seed=42)
+    
+    # Clear CUDA cache before training
+    torch.cuda.empty_cache()
+    
     Train_stage1(
         model=decoder1,
         train_ds=hf_dataset_stage1["train"],
@@ -56,10 +60,14 @@ if stage1:
         tokenizer=tokenizer,
     )
     wandb.finish()
+    
+    # Clear CUDA cache after training
+    torch.cuda.empty_cache()
 
 # Load the trained decoder1 model
 decoder1 = AutoModelForCausalLM.from_pretrained("./output_decoder1_test/")
 combined_model = CombinedModel(model_config, model_name, decoder1, decoder2, hidden_dim, tokenizer=tokenizer)
+
 # Freeze decoder1
 for param in combined_model.decoder1.parameters():
     param.requires_grad = False
@@ -71,8 +79,7 @@ for param in combined_model.decoder2.parameters():
 for param in combined_model.mapper.parameters():
     param.requires_grad = True
 combined_model.to(device)
-#print("Pausing before proceeding to stage 2. Press Ctrl+C to interrupt or wait 10 seconds...")
-#time.sleep(10)
+
 if stage2:
     print("Stage 2: Training combined model with second synthetic dataset")
     # wandb.init(
@@ -106,11 +113,13 @@ if stage3:
         name = f"Stage3Experiment_{dt}",
     )
     wandb.run.name = "stage3_full_dataset"
-    decoder1 = AutoModelForCausalLM.from_pretrained("./output_combined_model_stage2/decoder1/")
-    decoder2 = AutoModelForCausalLM.from_pretrained("./output_combined_model_stage2/decoder2/")
-    mapper_state = torch.load("./output_combined_model_stage2/mapper.pt", map_location=device)
-    combined_model = CombinedModel(model_config, model_name, decoder1, decoder2, hidden_dim, mapper_state=mapper_state)
-    tokenizer = AutoTokenizer.from_pretrained("./output_combined_model_stage2/")
+    decoder1 = AutoModelForCausalLM.from_pretrained("./output_combined_model_stage2_test/decoder1/")
+    decoder2 = AutoModelForCausalLM.from_pretrained("./output_combined_model_stage2_test/decoder2/")
+    mapper_state = torch.load("./output_combined_model_stage2_test/mapper.pt", map_location=device)
+    tokenizer = AutoTokenizer.from_pretrained("./output_combined_model_stage2_test/")
+    #print(f"Tokenizer loaded successfully: {tokenizer}")
+    combined_model = CombinedModel(model_config, model_name, decoder1, decoder2, hidden_dim, mapper_state=mapper_state, tokenizer=tokenizer)
+    #combined_model.to(device)
     hf_dataset_stage3 = ds_stage1.dataset
     hf_dataset_stage3 = hf_dataset_stage3.map(tokenize_stage3, fn_kwargs={"tokenizer": tokenizer}, num_proc=1)
     hf_dataset_stage3 = hf_dataset_stage3.train_test_split(test_size=0.1, shuffle=True, seed=42)

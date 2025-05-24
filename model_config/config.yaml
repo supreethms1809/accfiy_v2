@@ -1,13 +1,13 @@
 stage_config:
   stages:
-    stage1: true
-    stage2: true
+    stage1: false
+    stage2: true  
     stage3: false
     stage4: false
     eval: false
 
 base_model:
-  model_name: "Qwen/Qwen3-1.7B"
+  model_name: "Qwen/Qwen3-4B"
   #model_name: "nvidia/AceMath-1.5B-Instruct"
   #model_name: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
   model_type: "decoder-only"

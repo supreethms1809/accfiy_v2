@@ -64,41 +64,74 @@ class CombinedModel(PreTrainedModel, GenerationMixin):
         self.tokenizer = kwargs.get("tokenizer", None)
 
     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
-        # Use generate (with grad enabled) to collect hidden states from decoder1
-        print("Input IDs shape:", input_ids.shape)
-        print("Attention mask shape:", attention_mask.shape)
-        exit()
         if input_ids.dim() == 3 and input_ids.shape[1] == 1:
             input_ids = input_ids.squeeze(1)
         if attention_mask.dim() == 3 and attention_mask.shape[1] == 1:
             attention_mask = attention_mask.squeeze(1)
         # if hasattr(self.decoder1.generate, '__wrapped__'):
         #     self.decoder1.generate = self.decoder1.generate.__wrapped__.__get__(self.decoder1, type(self.decoder1))
-        # with torch.no_grad():
-        outputs = self.decoder1.generate(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            eos_token_id=self.tokenizer.eos_token_id,
-            max_new_tokens=128,
-            use_cache=True,
+        with torch.no_grad():
+            outputs = self.decoder1.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                eos_token_id=self.tokenizer.eos_token_id,
+                max_length=4096,
+                temperature=0.7,
+                top_p=0.8,
+                top_k=20,
+                min_p=0.0,
+                #do_sample=False,
+                #num_beams=1,
+                use_cache=False,
+                # output_hidden_states=False,
+                # return_dict_in_generate=False
+            )
+            
+        # Create attention mask for the generated sequence
+        gen_attention_mask = torch.ones_like(outputs)
+        
+        # # # Print the actual text
+        # input_text = self.tokenizer.decode(input_ids[0], skip_special_tokens=False)
+        # generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=False)
+        # print("\nInput text:")
+        # print(input_text)
+        # print("\nGenerated text:")
+        # print(generated_text)
+        # print("\nNewly generated part:")
+        # print(generated_text[len(input_text):])
+        
+        # # # Get only the last hidden state and immediately clean up outputs
+        # # last_hidden = outputs.hidden_states[-1][-1]
+        # # del outputs
+        # # torch.cuda.empty_cache()
+        
+        # # # Get only the generated portion of hidden states
+        # # gen_hidden = last_hidden[:, input_ids.shape[1]:, :]
+        # # del last_hidden
+        # # torch.cuda.empty_cache()
+        output_decoder1_pass = self.decoder1(
+            input_ids=outputs,
+            attention_mask=gen_attention_mask,
             output_hidden_states=True,
             return_dict_in_generate=True
         )
-        last_hidden = outputs.hidden_states[-1][-1]
-        #last_hidden = last_hidden[-1]
-        gen_hidden = last_hidden[:, input_ids.shape[1]:, :]
-        # del outputs, last_hidden
-        # torch.cuda.empty_cache()
-        a = self.mapper(gen_hidden)
-        modulated_embeds = gen_hidden + a
+        gen_hidden = output_decoder1_pass.hidden_states[-1][:, input_ids.shape[1]:, :]
+
+        # Process through mapper
+        with torch.amp.autocast(dtype=torch.float16, device_type="cuda"):
+            a = self.mapper(gen_hidden)
+            modulated_embeds = gen_hidden + a
+        
         modulated_embeds.requires_grad_()
 
-        outputs2 = self.decoder2(
-            input_ids=input_ids,
-            context=modulated_embeds,
-            attention_mask=attention_mask,
-            labels=labels
-        )
+        # Generate with decoder2
+        with torch.amp.autocast(dtype=torch.float16, device_type="cuda"):
+            outputs2 = self.decoder2(
+                input_ids=input_ids,
+                context=modulated_embeds,
+                attention_mask=attention_mask,
+                labels=labels
+            )
         return outputs2
     
     def generate(self, input_ids=None, attention_mask=None, max_new_tokens=2048, **kwargs):
@@ -165,124 +198,6 @@ class CombinedModel(PreTrainedModel, GenerationMixin):
             )
         return gen2
 
-# # --- CombinedModel for TRL GRPOTrainer ---
-# class CombinedModel(PreTrainedModel, GenerationMixin):
-#     def __init__(self, model_config, model_name, decoder1, decoder2, hidden_dim, **kwargs):
-#         model_config.attn_implementation = "eager"
-#         super().__init__(model_config)
-#         self.decoder1 = decoder1
-#         self.decoder2 = decoder2
-#         if (mapper_state := kwargs.get("mapper", None)) is not None:
-#             self.mapper = nn.Sequential(
-#                 nn.Linear(hidden_dim, hidden_dim),
-#                 nn.ReLU(),
-#                 nn.Linear(hidden_dim, hidden_dim)
-#             )
-#             self.mapper.load_state_dict(mapper_state)
-#         else:
-#             self.mapper = nn.Sequential(
-#                 nn.Linear(hidden_dim, hidden_dim),
-#                 nn.ReLU(),
-#                 nn.Linear(hidden_dim, hidden_dim)
-#             )
-#         self.config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
-#         self.config._name_or_path = model_name
-#         self.config.hidden_size = hidden_dim
-#         self.config.attn_implementation = "eager"
-#         self.config.use_cache = False
-#         self.mapper_gradient_checkpointing = False
-#         self.warnings_issued = {}
-#         self.add_model_tags = lambda *args, **kwargs: None
-
-#     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
-#         # Autoregressive generation with decoder1 to get hidden states
-#         generated = input_ids
-#         past_key_values = None
-#         hidden_states_list = []
-#         for _ in range(1024):
-#             outputs = self.decoder1(
-#                 input_ids=generated[:, -1:],
-#                 attention_mask=attention_mask[:, :generated.size(1)],
-#                 past_key_values=past_key_values,
-#                 use_cache=False,
-#                 output_hidden_states=True,
-#                 return_dict=True
-#             )
-#             next_token = torch.argmax(outputs.logits[:, -1, :], dim=-1, keepdim=True)
-#             generated = torch.cat([generated, next_token], dim=1)
-#             past_key_values = outputs.past_key_values
-#             hidden_states_list.append(outputs.hidden_states[-1][:, -1:, :])
-#         all_hidden_states = torch.cat(hidden_states_list, dim=1)
-
-#         # Rerun decoder1 to get embeddings from all generated tokens using inputs_embeds
-#         rerun_outputs = self.decoder1(
-#             inputs_embeds=all_hidden_states,
-#             attention_mask=torch.ones(all_hidden_states.shape[:2], dtype=torch.long, device=all_hidden_states.device),
-#             output_hidden_states=True,
-#             return_dict=True
-#         )
-#         hidden_states = rerun_outputs.hidden_states[-1]
-#         a = self.mapper(hidden_states)
-#         modulated_embeds = hidden_states + a
-#         modulated_embeds.requires_grad_()
-
-#         # Generate output from decoder2
-#         outputs2 = self.decoder2(
-#             input_ids=input_ids,
-#             context=modulated_embeds,
-#             attention_mask=torch.ones_like(generated),
-#             labels=labels
-#         )
-#         return outputs2
-    
-#     def generate(self, input_ids=None, attention_mask=None, max_new_tokens=2048, **kwargs):
-#         # Use decoder1 to generate hidden states from input_ids
-#         generated = input_ids
-#         past_key_values = None
-#         hidden_states_list = []
-#         for _ in range(max_new_tokens):
-#             outputs = self.decoder1(
-#                 # input_ids=input_ids,
-#                 # attention_mask=attention_mask,
-#                 input_ids=generated[:, -1:],
-#                 attention_mask=attention_mask[:, :generated.size(1)],
-#                 past_key_values=past_key_values,
-#                 use_cache=False,
-#                 output_hidden_states=True,
-#                 return_dict=True
-#             )
-#             next_token = torch.argmax(outputs.logits[:, -1, :], dim=-1, keepdim=True)
-#             generated = torch.cat([generated, next_token], dim=1)
-#             past_key_values = outputs.past_key_values
-#             hidden_states_list.append(outputs.hidden_states[-1][:, -1:, :])
-#         all_hidden_states = torch.cat(hidden_states_list, dim=1)
-
-#         # Map and modulate embeddings
-#         a = self.mapper(all_hidden_states)
-#         modulated_embeds = all_hidden_states + a
-#         modulated_embeds.requires_grad_()
-
-#         # Decoder2 manual autoregressive generation using input_ids and modulated context
-#         generated_ids = input_ids
-#         all_hidden_states = []
-#         past_key_values = None
-#         for _ in range(max_new_tokens):
-#             outputs = self.decoder2(
-#                 input_ids=generated_ids[:, -1:],
-#                 attention_mask=attention_mask[:, :generated_ids.size(1)],
-#                 past_key_values=past_key_values,
-#                 use_cache=False,
-#                 output_hidden_states=True,
-#                 return_dict=True,
-#                 context=modulated_embeds
-#             )
-#             next_token = torch.argmax(outputs.logits[:, -1, :], dim=-1, keepdim=True)
-#             generated_ids = torch.cat([generated_ids, next_token], dim=1)
-#             past_key_values = outputs.past_key_values
-#             all_hidden_states.append(outputs.hidden_states[-1][:, -1:, :])
-
-#         return generated_ids
-    
     def save_pretrained(self, save_directory, **kwargs):
         os.makedirs(save_directory, exist_ok=True)
 
@@ -468,8 +383,8 @@ def Train_stage1(model, train_ds, eval_ds, tokenizer):
     from trl import SFTTrainer, SFTConfig
 
     train_args = SFTConfig(
-        per_device_train_batch_size=24,
-        per_device_eval_batch_size=24,
+        per_device_train_batch_size=8,
+        per_device_eval_batch_size=8,
         gradient_accumulation_steps=4,
         num_train_epochs=3,
         torch_compile=False,
@@ -505,28 +420,28 @@ def Train_stage2(model, train_ds, eval_ds, tokenizer):
     from trl import SFTTrainer, SFTConfig
 
     train_args = SFTConfig(
-        per_device_train_batch_size=1,
-        #per_device_eval_batch_size=1,
-        gradient_accumulation_steps=1,
+        per_device_train_batch_size=2,
+        per_device_eval_batch_size=2,
+        gradient_accumulation_steps=2,
         num_train_epochs=1,
         torch_compile=False,
         #deepspeed="./deepspeed_config/ds_config_stage2.json",
         fp16=True,
         gradient_checkpointing=True,
-        logging_steps=40,
+        logging_steps=50,
         save_steps=100,
         output_dir="./output_combined_model_stage2_test/",
         save_strategy="steps",
-        #eval_strategy="steps",
+        eval_strategy="steps",
         save_safetensors=False,
         save_only_model=True,
-        #run_name=f"test_stage2-{dt}",
-        #report_to="wandb",
+        run_name=f"test_stage2-{dt}",
+        report_to="wandb",
     )
     trainer = SFTTrainer(
         model=model,
         train_dataset=train_ds,
-        #eval_dataset=eval_ds,
+        eval_dataset=eval_ds,
         args=train_args,
         processing_class=tokenizer
     )
@@ -540,9 +455,9 @@ def Train_stage3(model, train_ds, eval_ds, tokenizer):
     from trl import SFTTrainer, SFTConfig
     
     train_args = SFTConfig(
-        per_device_train_batch_size=16,
-        per_device_eval_batch_size=16,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
+        gradient_accumulation_steps=1,
         num_train_epochs=3,
         torch_compile=False,
         #deepspeed="./deepspeed_config/ds_config_stage3.json",

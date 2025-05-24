@@ -20,11 +20,11 @@ def tokenize_stage1(example, tokenizer):
     messages = [
         {
             "role": "user",
-            "content": f"<task> ANALYZE_FOR_PARALLELIZATION </task>\n<code_cpp>\n{example['cpp_code']}\n</code_cpp>"
+            "content": f"You are a helpful assistant that analyzes CUDA code for parallelization. Your task is to analyze C++ code and provide an analysis of the code. <task> ANALYZE_FOR_PARALLELIZATION </task>\n<code_cpp>\n{example['cpp_code']}\n</code_cpp>"
         },
         {
             "role": "assistant",
-            "content": f"<analysis>\n{example['analysis']}\n</analysis>"
+            "content": f"Put your final answer within <analysis>\n\boxed{example['analysis']}\n</analysis>"
         }
     ]
     full_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
@@ -35,7 +35,7 @@ def tokenize_stage1(example, tokenizer):
     full_prompt = full_prompt.replace("<analysis>", tokenizer.convert_tokens_to_string([tokenizer.convert_ids_to_tokens(tokenizer.convert_tokens_to_ids("<analysis>"))]))
     full_prompt = full_prompt.replace("</analysis>", tokenizer.convert_tokens_to_string([tokenizer.convert_ids_to_tokens(tokenizer.convert_tokens_to_ids("</analysis>"))]))
 
-    response_prefix = tokenizer.apply_chat_template(messages[:1], tokenize=False, add_generation_prompt=True)
+    response_prefix = tokenizer.apply_chat_template(messages[:1], tokenize=False, add_generation_prompt=True, enable_thinking=False)
     
     full_enc = tokenizer(full_prompt, truncation=True, padding=True, return_tensors="pt")
     prefix_ids = tokenizer(response_prefix, truncation=True, padding=False, return_tensors="pt")["input_ids"]
@@ -55,11 +55,11 @@ def tokenize_stage2(example, tokenizer):
     messages = [
         {
             "role": "user",
-            "content": f"<task> ANALYZE_FOR_PARALLELIZATION, TRANSFORM_CODE_TO_CUDA </task>\n<code_cpp>\n{example['cpp_code']}\n</code_cpp>"
+            "content": f"You are a helpful assistant that analyzes and transforms C++ code to CUDA code for parallelization. Your task is to analyze C++ code and provide an analysis of the code and then transform the code to CUDA code.<task> ANALYZE_FOR_PARALLELIZATION, TRANSFORM_CODE_TO_CUDA </task>\n<code_cpp>\n{example['cpp_code']}\n</code_cpp>"
         },
         {
             "role": "assistant",
-            "content": f"<code_cuda>\n<kernel>\n{example['cuda_code']}\n</kernel>\n</code_cuda>"
+            "content": f"Put your final answer within <code_cuda>\n<kernel>\n\boxed{example['cuda_code']}\n</kernel>\n</code_cuda>"
         }
     ]
     full_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
@@ -73,7 +73,7 @@ def tokenize_stage2(example, tokenizer):
     full_prompt = full_prompt.replace("<code_cuda>", tokenizer.convert_tokens_to_string([tokenizer.convert_ids_to_tokens(tokenizer.convert_tokens_to_ids("<code_cuda>"))]))
     full_prompt = full_prompt.replace("</code_cuda>", tokenizer.convert_tokens_to_string([tokenizer.convert_ids_to_tokens(tokenizer.convert_tokens_to_ids("</code_cuda>"))]))
 
-    response_prefix = tokenizer.apply_chat_template(messages[:1], tokenize=False, add_generation_prompt=True)
+    response_prefix = tokenizer.apply_chat_template(messages[:1], tokenize=False, add_generation_prompt=True, enable_thinking=False)
 
     full_enc = tokenizer(full_prompt, truncation=True, padding=True, return_tensors="pt")
     prefix_ids = tokenizer(response_prefix, truncation=True, padding=False, return_tensors="pt")["input_ids"]
@@ -88,11 +88,11 @@ def tokenize_stage3(example, tokenizer):
     messages = [
         {
             "role": "user",
-            "content": f"<task> ANALYZE_FOR_PARALLELIZATION, TRANSFORM_CODE_TO_CUDA </task>\n<code_cpp>\n{example['cpp_code']}\n</code_cpp>"
+            "content": f"You are a helpful assistant that analyzes and transforms C++ code to CUDA code for parallelization. Your task is to analyze C++ code and provide an analysis of the code and then transform the code to CUDA code. <task> ANALYZE_FOR_PARALLELIZATION, TRANSFORM_CODE_TO_CUDA </task>\n<code_cpp>\n{example['cpp_code']}\n</code_cpp>"
         },
         {
             "role": "assistant",
-            "content": f"<code_cuda>\n{example['cuda_code']}\n</code_cuda>"
+            "content": f"Put your final answer within <code_cuda>\n\boxed{example['cuda_code']}\n</code_cuda>"
         }
     ]
     full_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
@@ -106,7 +106,7 @@ def tokenize_stage3(example, tokenizer):
     full_prompt = full_prompt.replace("<code_cuda>", tokenizer.convert_tokens_to_string([tokenizer.convert_ids_to_tokens(tokenizer.convert_tokens_to_ids("<code_cuda>"))]))
     full_prompt = full_prompt.replace("</code_cuda>", tokenizer.convert_tokens_to_string([tokenizer.convert_ids_to_tokens(tokenizer.convert_tokens_to_ids("</code_cuda>"))]))
 
-    response_prefix = tokenizer.apply_chat_template(messages[:1], tokenize=False, add_generation_prompt=True)
+    response_prefix = tokenizer.apply_chat_template(messages[:1], tokenize=False, add_generation_prompt=True, enable_thinking=False)
 
     full_enc = tokenizer(full_prompt, truncation=True, padding=True, return_tensors="pt")
     prefix_ids = tokenizer(response_prefix, truncation=True, padding=False, return_tensors="pt")["input_ids"]
@@ -128,10 +128,10 @@ def tokenize_grpo(example, tokenizer):
     ]
     
     # Format prompt using the tokenizer's chat template
-    prompt_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    prompt_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
     
     # Expected response format
-    response_text = f"<code_cuda>\n{example['cuda_code']}\n</code_cuda>"
+    response_text = f"Put your final answer within <code_cuda>\n\boxed{example['cuda_code']}\n</code_cuda>"
     
     # Tokenize with proper dimensions
     prompt_tokens = tokenizer(prompt_text, padding="max_length", max_length=2048, 
