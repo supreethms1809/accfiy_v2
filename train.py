@@ -26,7 +26,10 @@ stage4 = config["stage_config"]["stages"]["stage4"]
 eval = config["stage_config"]["stages"]["eval"]
 test_run = config["dataset"]["test_run"]
 
-decoder1, decoder2, tokenizer, hidden_dim, model_config = load_model_and_tokenizer(model_name, special_tokens=True)
+if stage1:
+    decoder1, decoder2, tokenizer, hidden_dim, model_config = load_model_and_tokenizer(model_name, special_tokens=True)
+elif stage2:
+    decoder2, tokenizer, hidden_dim, model_config = load_model_and_tokenizer_stage2(model_name, special_tokens=True)
 
 if stage1 or stage3 or stage4:
     ds_stage1 = CustomDatasetStage1(

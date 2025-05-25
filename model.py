@@ -33,6 +33,28 @@ def load_model_and_tokenizer(model_name, special_tokens=True):
     decoder2.attn_implementation = "eager"
     return decoder1, decoder2, tokenizer, hidden_dim, model_config
 
+# Load the model and tokenizer
+def load_model_and_tokenizer_stage2(model_name, special_tokens=True):
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    tokenizer.padding_side = "left"
+    tokenizer.pad_token = tokenizer.eos_token
+    decoder2 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation="eager")
+    model_config = decoder2.config
+    hidden_dim = model_config.hidden_size
+    if special_tokens:
+        tokenizer.add_special_tokens({
+            "additional_special_tokens": [
+                "<task>", "</task>", "<code_cpp>", "</code_cpp>", "<analysis>", "</analysis>", "<code_cuda>", "</code_cuda>", "<kernel>", "</kernel>", "<think>", "</think>"
+            ]
+        })
+        #decoder1.resize_token_embeddings(len(tokenizer))
+        decoder2.resize_token_embeddings(len(tokenizer))
+    #decoder1.config.use_cache = False
+    decoder2.config.use_cache = False
+    #decoder1.attn_implementation = "eager"
+    decoder2.attn_implementation = "eager"
+    return decoder2, tokenizer, hidden_dim, model_config
+
 # --- CombinedModel for TRL GRPOTrainer ---
 class CombinedModel(PreTrainedModel, GenerationMixin):
     def __init__(self, model_config, model_name, decoder1, decoder2, hidden_dim, **kwargs):
@@ -420,13 +442,14 @@ def Train_stage2(model, train_ds, eval_ds, tokenizer):
     from trl import SFTTrainer, SFTConfig
 
     train_args = SFTConfig(
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=2,
-        gradient_accumulation_steps=2,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
+        gradient_accumulation_steps=16,
         num_train_epochs=1,
         torch_compile=False,
         #deepspeed="./deepspeed_config/ds_config_stage2.json",
         fp16=True,
+        #packing=True,
         gradient_checkpointing=True,
         logging_steps=50,
         save_steps=100,
