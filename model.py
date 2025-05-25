@@ -15,8 +15,10 @@ def load_model_and_tokenizer(model_name, special_tokens=True):
     tokenizer.pad_token = tokenizer.eos_token
     #decoder1 = AutoModel.from_pretrained(model_name, trust_remote_code=True, attn_implementation="eager")
     #decoder2 = AutoModel.from_pretrained(model_name, trust_remote_code=True, attn_implementation="eager")
-    decoder1 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation="eager")
-    decoder2 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation="eager")
+    #attn_implementation = "eager"
+    attn_implementation = "flash_attention_2"
+    decoder1 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation=attn_implementation)
+    decoder2 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation=attn_implementation)
     model_config = decoder1.config
     hidden_dim = model_config.hidden_size
     if special_tokens:
@@ -29,8 +31,8 @@ def load_model_and_tokenizer(model_name, special_tokens=True):
         decoder2.resize_token_embeddings(len(tokenizer))
     decoder1.config.use_cache = False
     decoder2.config.use_cache = False
-    decoder1.attn_implementation = "eager"
-    decoder2.attn_implementation = "eager"
+    decoder1.attn_implementation = attn_implementation
+    decoder2.attn_implementation = attn_implementation
     return decoder1, decoder2, tokenizer, hidden_dim, model_config
 
 # Load the model and tokenizer
@@ -38,7 +40,8 @@ def load_model_and_tokenizer_stage2(model_name, special_tokens=True):
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     tokenizer.padding_side = "left"
     tokenizer.pad_token = tokenizer.eos_token
-    decoder2 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation="eager")
+    attn_implementation = "flash_attention_2"
+    decoder2 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation=attn_implementation)
     model_config = decoder2.config
     hidden_dim = model_config.hidden_size
     if special_tokens:
@@ -52,13 +55,13 @@ def load_model_and_tokenizer_stage2(model_name, special_tokens=True):
     #decoder1.config.use_cache = False
     decoder2.config.use_cache = False
     #decoder1.attn_implementation = "eager"
-    decoder2.attn_implementation = "eager"
+    decoder2.attn_implementation = attn_implementation
     return decoder2, tokenizer, hidden_dim, model_config
 
 # --- CombinedModel for TRL GRPOTrainer ---
 class CombinedModel(PreTrainedModel, GenerationMixin):
     def __init__(self, model_config, model_name, decoder1, decoder2, hidden_dim, **kwargs):
-        model_config.attn_implementation = "eager"
+        model_config.attn_implementation = "flash_attention_2"
         super().__init__(model_config)
         self.decoder1 = decoder1
         self.decoder2 = decoder2
@@ -78,12 +81,13 @@ class CombinedModel(PreTrainedModel, GenerationMixin):
         self.config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
         self.config._name_or_path = model_name
         self.config.hidden_size = hidden_dim
-        self.config.attn_implementation = "eager"
+        self.config.attn_implementation = "flash_attention_2"
         self.config.use_cache = False
         self.mapper_gradient_checkpointing = False
         self.warnings_issued = {}
         self.add_model_tags = lambda *args, **kwargs: None
         self.tokenizer = kwargs.get("tokenizer", None)
+        self.max_position_embeddings = self.config.max_position_embeddings
 
     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
         if input_ids.dim() == 3 and input_ids.shape[1] == 1:
@@ -97,7 +101,7 @@ class CombinedModel(PreTrainedModel, GenerationMixin):
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 eos_token_id=self.tokenizer.eos_token_id,
-                max_length=4096,
+                max_new_tokens=self.max_position_embeddings,
                 temperature=0.7,
                 top_p=0.8,
                 top_k=20,
@@ -444,7 +448,7 @@ def Train_stage2(model, train_ds, eval_ds, tokenizer):
     train_args = SFTConfig(
         per_device_train_batch_size=1,
         per_device_eval_batch_size=1,
-        gradient_accumulation_steps=16,
+        gradient_accumulation_steps=8,
         num_train_epochs=1,
         torch_compile=False,
         #deepspeed="./deepspeed_config/ds_config_stage2.json",
