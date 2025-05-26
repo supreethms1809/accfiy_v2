@@ -17,8 +17,9 @@ def load_model_and_tokenizer(model_name, special_tokens=True):
     #decoder2 = AutoModel.from_pretrained(model_name, trust_remote_code=True, attn_implementation="eager")
     #attn_implementation = "eager"
     attn_implementation = "flash_attention_2"
-    decoder1 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation=attn_implementation)
-    decoder2 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation=attn_implementation)
+    decoder1 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation=attn_implementation, torch_dtype=torch.float16)
+    decoder2 = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, attn_implementation=attn_implementation, torch_dtype=torch.float16)
+    print(f"Successfully loaded model")
     model_config = decoder1.config
     hidden_dim = model_config.hidden_size
     if special_tokens:
@@ -106,11 +107,7 @@ class CombinedModel(PreTrainedModel, GenerationMixin):
                 top_p=0.8,
                 top_k=20,
                 min_p=0.0,
-                #do_sample=False,
-                #num_beams=1,
                 use_cache=False,
-                # output_hidden_states=False,
-                # return_dict_in_generate=False
             )
             
         # Create attention mask for the generated sequence
@@ -128,8 +125,6 @@ class CombinedModel(PreTrainedModel, GenerationMixin):
         
         # # # Get only the last hidden state and immediately clean up outputs
         # # last_hidden = outputs.hidden_states[-1][-1]
-        # # del outputs
-        # # torch.cuda.empty_cache()
         
         # # # Get only the generated portion of hidden states
         # # gen_hidden = last_hidden[:, input_ids.shape[1]:, :]
@@ -142,7 +137,8 @@ class CombinedModel(PreTrainedModel, GenerationMixin):
             return_dict_in_generate=True
         )
         gen_hidden = output_decoder1_pass.hidden_states[-1][:, input_ids.shape[1]:, :]
-
+        del outputs
+        torch.cuda.empty_cache()
         # Process through mapper
         with torch.amp.autocast(dtype=torch.float16, device_type="cuda"):
             a = self.mapper(gen_hidden)
@@ -409,22 +405,23 @@ def Train_stage1(model, train_ds, eval_ds, tokenizer):
     from trl import SFTTrainer, SFTConfig
 
     train_args = SFTConfig(
-        per_device_train_batch_size=8,
-        per_device_eval_batch_size=8,
+        per_device_train_batch_size=12,
+        per_device_eval_batch_size=12,
         gradient_accumulation_steps=4,
-        num_train_epochs=3,
+        num_train_epochs=6,
         torch_compile=False,
-        #deepspeed="./deepspeed_config/ds_config.json",
+        deepspeed="./run_config/ds_config.json",
         fp16=True,
         bf16=False,
         gradient_checkpointing=True,
-        logging_steps=40,
-        save_steps=100,
+        logging_steps=4,
+        save_steps=16,
         output_dir="./output_decoder1_test/",
         save_strategy="steps",
         eval_strategy="steps",
         save_safetensors=False,
         save_only_model=True,
+        packing=True,
         run_name=f"test_stage1-{dt}",
         #report_to="wandb",
     )
@@ -433,8 +430,8 @@ def Train_stage1(model, train_ds, eval_ds, tokenizer):
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         args=train_args,
-        #processing_class=tokenizer,
-        #data_collator=custom_collate_fn,
+        processing_class=tokenizer,
+        #data_collator=ds_collate,
     )
     print("Trainer stage 1 initialized.. starting training")
     trainer.train()
@@ -448,12 +445,11 @@ def Train_stage2(model, train_ds, eval_ds, tokenizer):
     train_args = SFTConfig(
         per_device_train_batch_size=1,
         per_device_eval_batch_size=1,
-        gradient_accumulation_steps=8,
+        gradient_accumulation_steps=4,
         num_train_epochs=1,
         torch_compile=False,
-        #deepspeed="./deepspeed_config/ds_config_stage2.json",
+        deepspeed="./run_config/ds_config.json",
         fp16=True,
-        #packing=True,
         gradient_checkpointing=True,
         logging_steps=50,
         save_steps=100,
@@ -462,6 +458,7 @@ def Train_stage2(model, train_ds, eval_ds, tokenizer):
         eval_strategy="steps",
         save_safetensors=False,
         save_only_model=True,
+        packing=True,
         run_name=f"test_stage2-{dt}",
         report_to="wandb",
     )
@@ -484,10 +481,10 @@ def Train_stage3(model, train_ds, eval_ds, tokenizer):
     train_args = SFTConfig(
         per_device_train_batch_size=1,
         per_device_eval_batch_size=1,
-        gradient_accumulation_steps=1,
-        num_train_epochs=3,
+        gradient_accumulation_steps=4,
+        num_train_epochs=1,
         torch_compile=False,
-        #deepspeed="./deepspeed_config/ds_config_stage3.json",
+        deepspeed="./run_config/ds_config.json",
         fp16=True,
         gradient_checkpointing=True,
         logging_steps=40,
@@ -497,6 +494,7 @@ def Train_stage3(model, train_ds, eval_ds, tokenizer):
         eval_strategy="steps",
         save_safetensors=False,
         save_only_model=True,
+        packing=True,
         run_name=f"test_stage3-{dt}",
         report_to="wandb",
     )

@@ -6,7 +6,7 @@ class CustomDatasetStage1(torch.utils.data.Dataset):
     def __init__(self, dataset_name, split, tokenizer, max_length=512, test_run=False):
         self.dataset = load_dataset(dataset_name, split=split)
         if test_run:
-            self.dataset = self.dataset.select(range(256))
+            self.dataset = self.dataset.select(range(1024))
         self.tokenizer = tokenizer
         self.max_length = max_length
 
@@ -47,8 +47,8 @@ def tokenize_stage1(example, tokenizer):
     for k in ["input_ids", "attention_mask", "labels"]:
         if k in full_enc and isinstance(full_enc[k], torch.Tensor) and full_enc[k].dim() == 2 and full_enc[k].shape[0] == 1:
             full_enc[k] = full_enc[k].squeeze(0)
-    # print("input_ids:", type(full_enc["input_ids"]), full_enc["input_ids"].shape)
-    # print("labels:", type(full_enc["labels"]), full_enc["labels"].shape)
+    #print("input_ids:", type(full_enc["input_ids"]), full_enc["input_ids"].shape)
+    #print("labels:", type(full_enc["labels"]), full_enc["labels"].shape)
     return full_enc
 
 def tokenize_stage2(example, tokenizer):
@@ -151,7 +151,7 @@ class CustomDatasetStage2(torch.utils.data.Dataset):
     def __init__(self, dataset_name, split, tokenizer, max_length=512, test_run=False):
         self.dataset = load_dataset(dataset_name, split=split)
         if test_run:
-            self.dataset = self.dataset.select(range(256))
+            self.dataset = self.dataset.select(range(1024))
         self.tokenizer = tokenizer
         self.max_length = max_length
 
